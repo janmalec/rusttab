@@ -69,15 +69,32 @@ enum ReadingState {
 
 
 fn main() {
-    let colors: [&Color; 3] = [&RED, &BLUE, &BLACK];
+    // let colors: [&dyn Color; 3] = [&RED, &BLUE, &BLACK];
+    // Check if a file is provided as a command line argument
+    // If not, use the default file
+    let args: Vec<String> = std::env::args().collect();
+    let file_name = if args.len() > 1 {
+        &args[1]
+    } else {
+        "test_files/ISOPLT.P92"
+    };
     // File hosts must exist in current path before this produces output
-    if let Ok(lines) = read_lines("test_files/ISOPLT.P92") {
-        if let Ok(mut curves) = read_lines("test_files/ISOPLT.CUR") {
+    if let Ok(lines) = read_lines(file_name) {
+        // if a second comand line argument is provided, that is the cur file, otherwise
+        // the CUR file name is the same as the P92 file name except .CUR extension
+        let cur_filename = if args.len() > 2 {
+            args[2].clone()
+        } else {
+            let mut cur_filename = String::from(file_name);
+            cur_filename.replace_range(cur_filename.len()-3.., "CUR");
+            cur_filename
+        };
+        if let Ok(mut curves) = read_lines(&cur_filename) {
             // Consumes the iterator, returns an (Optional) String
-            let mut settings = PlotDimensions{..Default::default()};
+            let mut settings: PlotDimensions = PlotDimensions{..Default::default()};
             let mut state = ReadingState::Head1;
             let mut labels : Vec<String> = Vec::new();
-            for (i, line) in lines.enumerate(){
+            lines.enumerate().for_each(|(_i, line)| {
                 if let Ok(to_parse) = line {
                     //println!("{}", to_parse);
                     if to_parse.trim().is_empty() {
@@ -87,9 +104,15 @@ fn main() {
                     }
                     //println!("i: {} l:{}", i, to_parse);
                     parse(to_parse, &mut settings, &mut state);
+                    // create an output directory with derived name from cur_filename without ext
+                    let dir_name: &str = cur_filename.split(".").next().unwrap();
+                    if !Path::new(&dir_name).exists() {
+                        std::fs::create_dir(dir_name).unwrap();
+                    }
+
                     if  matches!(state, ReadingState::Line2) {
                         //let file_name = String::from("out/") + &settings.title1.clone() + ".png";
-                        let file_name = String::from("out/") + &settings.title1.clone() + ".svg";
+                        let file_name = String::from(dir_name) + "/" + &settings.title1.clone() + ".svg";
                         //let root = BitMapBackend::new(&file_name, (1024, 768)).into_drawing_area();
                         let root = SVGBackend::new(&file_name, (1024, 768)).into_drawing_area();
                         let (upper, lower) = root.split_vertically((768.*0.75) as i32);
@@ -188,6 +211,9 @@ fn main() {
                             .stroke_width(3)))
                             .unwrap();
                         }
+                        // save svg to file
+                        
+
                         /*
                         low_chart
                             .configure_series_labels()
@@ -198,8 +224,14 @@ fn main() {
                     */}
                     }
                 //break;
-            }
+            });
+        } else {
+            println!("Could not open {}", cur_filename);
         }
+    } else {
+        println!("No file selected");
+        println!("Usage: cargo run <filename>");
+        println!("Or rusttab.exe <filename>")
     }
 
 }
