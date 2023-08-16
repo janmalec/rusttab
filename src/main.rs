@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Read};
 use std::path::Path;
 
 extern crate plotters;
@@ -96,13 +96,11 @@ fn main() {
             let mut labels : Vec<String> = Vec::new();
             lines.enumerate().for_each(|(_i, line)| {
                 if let Ok(to_parse) = line {
-                    //println!("{}", to_parse);
                     if to_parse.trim().is_empty() {
                         settings = PlotDimensions{..Default::default()};
                         state = ReadingState::Empty;
                         labels.clear();
                     }
-                    //println!("i: {} l:{}", i, to_parse);
                     parse(to_parse, &mut settings, &mut state);
                     // create an output directory with derived name from cur_filename without ext
                     let dir_name: &str = cur_filename.split(".").next().unwrap();
@@ -119,8 +117,15 @@ fn main() {
                         //data.clear();
                         let mut data : Vec<Vec<(f64, f64)>> = Vec::new();
                         for j in 0..settings.no_curves{
+                            println!("j: {} no_curves {}", j, settings.no_curves);
                             let mut read_data : Vec<(f64, f64)> = Vec::new();
-                            let title =  curves.next().unwrap().unwrap();
+                            let title = match curves.next() {
+                                Some(Ok(title)) => title,
+                                _ => {
+                                    eprintln!("Error: No more curves to read on file {}", cur_filename);
+                                    return;
+                                }
+                            };
                             println!("j: {} Title: {}", j, title);
                             while let Some(entry) = curves.next() {
                                 if let Ok(point) = entry{
@@ -139,6 +144,9 @@ fn main() {
                                         settings.yhi = f64::max(settings.yhi, y);
                                     }
                                     read_data.push((x, y));
+                                } else {
+                                    eprintln!("Error: Could not read  point on file {}", cur_filename);
+                                    return;
                                 }
                             }
                             
@@ -203,16 +211,14 @@ fn main() {
                             //.y_label_formatter(&|x| format!("{:.1e}", x))
                             .label_style(("arial", 24)).draw().unwrap();
                             
-                        let compare_with = data[0].clone();
+                        let compare_with: Vec<(f64, f64)> = data[0].clone();
                         for idx in 1..data.len(){
                             let current_data = data[idx].clone();
                             let ratio: Vec<(f64, f64)> = compare_with.iter().zip(current_data.iter()).map(|(&d, &di)| (di.0, di.1/d.1)).collect();
                             low_chart.draw_series(LineSeries::new(ratio, Palette99::pick(idx).filled()
                             .stroke_width(3)))
                             .unwrap();
-                        }
-                        // save svg to file
-                        
+                        }                    
 
                         /*
                         low_chart
@@ -245,6 +251,20 @@ where P: AsRef<Path>, {
 }
 
 fn parse(parseme: String, settings: &mut PlotDimensions, state: &mut ReadingState ){
+    // Print line and state
+    /*
+    println!("{} {}", &parseme, match state {
+        ReadingState::Head1 => "Head1",
+        ReadingState::Head2 => "Head2",
+        ReadingState::Xlabel => "Xlabel",
+        ReadingState::Ylabel => "Ylabel",
+        ReadingState::Title1 => "Title1",
+        ReadingState::Title2 => "Title2",
+        ReadingState::Line1 => "Line1",
+        ReadingState::Line2 => "Line2",
+        ReadingState::Empty => "Empty"
+    });
+     */
     match state  {
         ReadingState::Head1 => {
             if let Ok(parsed) = parseme[1..13].trim().parse(){
